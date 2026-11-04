@@ -23,6 +23,7 @@ jobs:
       - run: npm run build
       - name: Publish dist to gh-pages
         run: |
+          printf '%s\n' 'nextstop.isjia.page' > dist/CNAME
           touch dist/.nojekyll
           cd dist
           git init -q -b gh-pages
