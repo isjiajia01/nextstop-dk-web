@@ -1,15 +1,16 @@
 # Næste (web demo)
 
-Live bus-arrivals demo for Denmark, web version of the iOS prototype in `nextstop-dk`. **All data is synthetic demo data** (labelled "Demodata" in the UI). No Rejseplanen calls.
+Live bus-arrivals demo for Denmark, web version of the iOS prototype in `nextstop-dk`. **The web UI still uses synthetic demo data** (labelled "Demodata"). A separate live backend exists in `server/`, but the demo frontend does not call it yet.
 
 ## Commands
 - `npm install`
 - `npm run dev` / `npm run build` / `npm run preview`
-- `npm test` (Vitest: minutes-to-arrival, "Nu", cancellation precedence, band position, Copenhagen time/DST)
+- `npm test` (Vitest: domain tests plus backend cache, budget, coalescing, stale-fallback, adapter, and HTTP tests)
 - `npm run typecheck`
+- `npm run server` (live backend; requires `REJSEPLANEN_ACCESS_ID` only when a request is made)
 
 ## Data seam
-The UI only talks to `TransitRepository` (`src/data/types.ts`). `FixtureRepository` is the demo implementation. A real implementation must run behind your own server or proxy: **a browser must never hold the Rejseplanen key.**
+The UI only talks to `TransitRepository` (`src/data/types.ts`). `FixtureRepository` is the demo implementation. A real implementation must run behind your own server or proxy: **a browser must never hold the Rejseplanen key.** The repository now includes a credential-free-to-the-browser Node adapter and local HTTP server in `server/`; see [docs/backend.md](docs/backend.md) for configuration, durability guarantees, and the documented API assumptions.
 
 ## Map choice
 MapLibre GL JS with OpenFreeMap vector tiles (positron/dark): no API key, open licence, WebGL with a fallback notice if tiles or WebGL fail.
