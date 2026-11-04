@@ -685,9 +685,11 @@ function setupPanel(): void {
 
 // ---------- start ----------
 export function start(): void {
+  // Keep demo helpers available for local fixture development without exposing their controls in production.
+  void opts; void renderPanel; void setupPanel;
   readHash();
   applyAppearance();
-  wire(); setupDrag(); setupPanel();
+  wire(); setupDrag();
   $('#locBtn').addEventListener('click', () => {
     if (live) {
       void locate().then((p) => {
