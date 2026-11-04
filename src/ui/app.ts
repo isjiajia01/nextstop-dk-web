@@ -123,10 +123,27 @@ async function refreshJourney(): Promise<void> {
   try { journey = await api.journey(S.jId, S.stopId, nowMs()); } catch { /* keep the last journey */ }
 }
 
+/** Live mode only: the browser position, or 'denied'. Asked once per page load. */
+let located: LatLng | 'denied' | undefined;
+const live = !!apiBase;
+const home = (): LatLng => (located && located !== 'denied' ? located : USER_LOCATION);
+function locate(): Promise<LatLng | 'denied'> {
+  if (!navigator.geolocation) return Promise.resolve('denied');
+  return new Promise((resolve) => navigator.geolocation.getCurrentPosition(
+    (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+    () => resolve('denied'),
+    { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+  ));
+}
+
 async function boot(): Promise<void> {
   repo.reseed(nowMs());
   nearby = []; nearest = null; board = null; journey = null; boardFailed = false;
   if (S.scenario === 'loading') { S.scene = 'loading'; render(); syncMap(true); return; }
+  if (live && S.scenario === 'normal') {
+    if (!located) { S.scene = 'loading'; render(); located = await locate(); }
+    if (located === 'denied') S.scenario = 'denied';
+  }
   if (S.scenario === 'denied') {
     origin = FALLBACK_CENTER; S.scene = 'denied'; if (S.detent === 'peek') S.detent = 'half';
     render(); syncMap(true); return;
@@ -136,10 +153,14 @@ async function boot(): Promise<void> {
     nearest = await api.nearestStop(origin);
     render(); syncMap(true); return;
   }
-  origin = USER_LOCATION;
+  origin = home();
   if (S.scene !== 'search') S.scene = 'loading';
   render();
   nearby = await api.nearbyStops(origin, 1000);
+  if (live && nearby.length === 0) {
+    S.scene = 'nostops'; S.detent = 'half'; nearest = await api.nearestStop(origin);
+    render(); syncMap(true); return;
+  }
   if (!nearby.some((s) => s.id === S.stopId)) S.stopId = nearby[0]?.id ?? 'nv';
   repo.mode = S.net !== 'ok' ? (S.scenario === 'issues' ? 'issues' : 'normal') : repoMode(); // seed one good board first
   await loadBoard(true);
@@ -576,7 +597,7 @@ async function onAct(a: string): Promise<void> {
   else if (a === 'disc') { S.discOpen = !S.discOpen; render(); }
   else if (a === 'retry') { toast('Prøver igen …'); await loadBoard(); toast(stale() ? 'Stadig ingen forbindelse (demo)' : 'Opdateret'); }
   else if (a === 'settings') toast('Demo: her åbnes indstillinger for placering');
-  else if (a === 'nearest' && nearest) { origin = USER_LOCATION; nearby = []; S.scenario = 'normal'; await selectStop(nearest.id); }
+  else if (a === 'nearest' && nearest) { origin = home(); nearby = []; S.scenario = 'normal'; await selectStop(nearest.id); }
 }
 
 function wire(): void {
@@ -603,7 +624,7 @@ function wire(): void {
 }
 
 async function pickFromSearch(id: string): Promise<void> {
-  if (S.scenario === 'denied' || S.scenario === 'nostops') { origin = USER_LOCATION; S.scenario = 'normal'; nearby = await api.nearbyStops(origin, 1000); }
+  if (S.scenario === 'denied' || S.scenario === 'nostops') { origin = home(); S.scenario = 'normal'; nearby = await api.nearbyStops(origin, 1000); }
   await selectStop(id, 'peek');
 }
 
@@ -668,6 +689,15 @@ export function start(): void {
   applyAppearance();
   wire(); setupDrag(); setupPanel();
   $('#locBtn').addEventListener('click', () => {
+    if (live) {
+      void locate().then((p) => {
+        if (p === 'denied') { toast('Placering er slået fra'); return; }
+        const moved = !located || located === 'denied' || Math.abs(p.lat - located.lat) + Math.abs(p.lng - located.lng) > 0.001;
+        located = p;
+        if (moved) { S.scenario = 'normal'; void boot(); } else map?.focus(origin, mapPadding(), 15.5);
+      });
+      return;
+    }
     if (S.scene === 'denied') { toast('Placering er slået fra (demo)'); return; }
     map?.focus(origin, mapPadding(), 15.5); toast('Viser din placering (demo)');
   });

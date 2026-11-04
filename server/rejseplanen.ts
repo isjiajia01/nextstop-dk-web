@@ -84,7 +84,7 @@ export class LiveTransitRepository implements TransitRepository {
   }
 
   async nearestStop(origin: LatLng): Promise<StopWithDistance | null> {
-    return (await this.nearbyStops(origin, 1000))[0] ?? null;
+    return (await this.nearbyStops(origin, 10_000))[0] ?? null;
   }
 
   async journey(_journeyId: string, _stopId: string, _now: number): Promise<Journey> {
@@ -138,6 +138,8 @@ function parseDeparture(value: unknown, stopId: string, index: number, now: numb
 }
 
 function locationCandidates(payload: LocationPayload): RejseplanLocation[] {
+  // With no match Rejseplanen answers with only a TechnicalMessages block: that is an empty result, not a bad response.
+  if (payload && typeof payload === 'object' && 'TechnicalMessages' in payload && !('LocationList' in payload) && !('stopLocationOrCoordLocation' in payload)) return [];
   if (!payload || typeof payload !== 'object' || (!('LocationList' in payload) && !('stopLocationOrCoordLocation' in payload))) {
     throw new UpstreamUnavailableError('rejected', 'Rejseplanen returned an unrecognized location response.');
   }

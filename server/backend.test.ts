@@ -172,6 +172,13 @@ describe('persistent upstream gateway', () => {
 });
 
 describe('Rejseplanen adapter', () => {
+  it('treats a TechnicalMessages-only location response as no stops', async () => {
+    const fetcher: FetchLike = async () => response({ TechnicalMessages: { TechnicalMessage: [] } });
+    const repository = new LiveTransitRepository(new RejseplanenClient(config(await tempCache()), fetcher));
+    await expect(repository.nearbyStops({ lat: 48.85, lng: 2.35 }, 1000)).resolves.toEqual([]);
+    await expect(repository.nearestStop({ lat: 48.85, lng: 2.35 })).resolves.toBeNull();
+  });
+
   it('normalizes the documented location and departure-board shapes', async () => {
     const path = await tempCache();
     const urls: string[] = [];
