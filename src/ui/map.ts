@@ -69,6 +69,24 @@ export async function createMap(
   let busMarker: MlMarker | null = null;
   let last: MapView | null = null;
   let pitched = true;
+  let dark = opts.dark;
+
+  const addBuildings = () => {
+    if (!map.getSource('openmaptiles') || map.getLayer('building-3d')) return;
+    const layers = map.getStyle().layers;
+    const buildingIndex = layers.findIndex((layer) => layer.id === 'building');
+    const before = buildingIndex >= 0 ? layers[buildingIndex + 1]?.id : layers.find((layer) => layer.type === 'symbol')?.id;
+    map.addLayer({
+      id: 'building-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
+      filter: ['!=', ['get', 'hide_3d'], true],
+      paint: {
+        'fill-extrusion-color': dark ? '#35383c' : '#d9d9d3',
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 0],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': 1,
+      },
+    }, before);
+  };
 
   const applyRoute = () => {
     const v = last;
@@ -92,7 +110,7 @@ export async function createMap(
       map.addLayer({ id: 'radius', type: 'line', source: 'radius', paint: { 'line-color': '#007AFF', 'line-width': 3, 'line-dasharray': [3, 2] } });
     }
   };
-  map.on('style.load', applyRoute);
+  map.on('style.load', () => { addBuildings(); applyRoute(); });
 
   const hideCollidingLabels = () => requestAnimationFrame(() => {
     const sel = [...markers.values()].find((m) => m.el.classList.contains('is-selected'));
@@ -172,7 +190,7 @@ export async function createMap(
       map.setPadding(padding); // camera padding keeps the fit inside the free map area
       map.fitBounds(b, { padding: 0, duration: opts.reduceMotion() ? 0 : 700, maxZoom: 15.5 });
     },
-    setTheme(dark) { map.setStyle((dark ? STYLE_DARK : STYLE_LIGHT) as unknown as StyleSpecification | string); },
+    setTheme(isDark) { dark = isDark; map.setStyle((dark ? STYLE_DARK : STYLE_LIGHT) as unknown as StyleSpecification | string); },
     togglePitch() {
       pitched = !pitched;
       map.easeTo({ pitch: pitched ? 38 : 0, duration: opts.reduceMotion() ? 0 : 400 });
