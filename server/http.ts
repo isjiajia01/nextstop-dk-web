@@ -97,7 +97,11 @@ function coordinates(url: URL): { lat: number; lng: number } {
 }
 
 const writeJson = (response: ServerResponse, status: number, value: unknown): void => {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  const origin = process.env.ALLOWED_ORIGIN?.trim();
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
+    ...(origin ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}),
+  });
   response.end(JSON.stringify(value));
 };
 

@@ -3,6 +3,7 @@ import { buildViews, effectiveTime, type DepView } from '../domain/departure';
 import { formatDistance, foldLoose, lineCategory } from '../domain/line';
 import { formatTime, formatTimeSeconds } from '../domain/time';
 import { FixtureRepository, type DemoMode } from '../data/fixtureRepository';
+import { HttpRepository } from '../data/httpRepository';
 import { FALLBACK_CENTER, RECENT_IDS, USER_LOCATION, FAR_LOCATION } from '../data/fixtures';
 import type { Board, Journey, LatLng, ServiceAlert, StopWithDistance, TransitRepository } from '../data/types';
 import { depLabel, renderBand, skeletonHtml } from './bandView';
@@ -27,7 +28,9 @@ const S: State = {
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 const repo = new FixtureRepository(350);
-const api: TransitRepository = repo; // the UI only knows the interface
+/** Live data when a backend URL is given: `?api=https://host` or build-time VITE_API_BASE. Otherwise the synthetic demo. */
+const apiBase = new URLSearchParams(location.search).get('api') ?? (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+const api: TransitRepository = apiBase ? new HttpRepository(apiBase) : repo; // the UI only knows the interface
 
 let board: Board | null = null;
 let boardFailed = false;
