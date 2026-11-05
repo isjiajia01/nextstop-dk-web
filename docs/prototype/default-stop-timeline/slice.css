@@ -1,0 +1,43 @@
+/* Slice "default stop + timeline". Loaded after ../assets/web.css. No new colour values:
+   every colour is an existing --c-* / --color-* token. Shadow reuses the toast/panel shadow. */
+
+/* ---------- location notice: an inline banner (same family as offline/disruption), not a blocking card ---------- */
+.banner.locate { background: var(--c-surface); gap: 10px; padding: 10px 2px 12px var(--spacing-md); align-items: flex-start; }
+.banner.locate .b-ico { font-size: 18px; margin-top: 1px; }
+.banner.locate.is-ask .b-ico { color: var(--c-location); }
+.banner.locate.is-muted .b-ico { color: var(--c-secondary); }
+.banner.locate .b-sub { color: var(--c-secondary); opacity: 1; margin-top: 1px; }
+.banner.locate .b-row { display: flex; margin-top: var(--spacing-sm); }
+.banner.locate .b-action { align-self: auto; background: var(--c-surface-sunken); color: var(--c-primary); min-height: var(--spacing-hit); }
+.banner.locate .b-action .ico { font-size: 15px; }
+.banner.locate .b-action.is-primary { background: var(--c-primary); color: var(--c-on-primary); }
+.banner.locate .b-action[aria-disabled="true"] { cursor: progress; }
+.banner.locate .b-close { flex: none; width: var(--spacing-hit); height: var(--spacing-hit); margin: -10px 0 -10px; display: grid; place-items: center; border-radius: var(--rounded-full); color: var(--c-secondary); font-size: 15px; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.rm .spin { animation: none; border-right-color: currentColor; opacity: .6; }
+@media (hover: hover) {
+  .banner.locate .b-close:hover { background: var(--c-surface-sunken); color: var(--c-primary); }
+  .banner.locate .b-action.is-primary:hover { background: color-mix(in srgb, var(--c-primary) 86%, var(--c-surface)); }
+  .banner.locate .b-action:not(.is-primary):hover { background: color-mix(in srgb, var(--c-primary) 10%, var(--c-surface-sunken)); }
+}
+
+/* ---------- departures as an ordered list (text alternative to the band) ---------- */
+ol.rows { list-style: none; margin: 0; padding: 0; }
+ol.rows > li { position: relative; }
+ol.rows > li + li .row::before { content: ""; position: absolute; top: 0; right: 0; left: 72px; border-top: 1px solid var(--c-separator); }
+.sec-h h3 { margin: 0; font: inherit; }
+.sec-h h3.t-label-md { font-weight: var(--type-label-md-weight); }
+#stopTitle:focus { outline: none; }
+
+/* ---------- camera move when the position arrives (skipped with Reduce Motion) ---------- */
+.map-plane.glide { transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
+.map-pins.fading { animation: pinsin .5s ease-out; }
+@keyframes pinsin { 0%, 55% { opacity: 0; } 100% { opacity: 1; } }
+
+/* ---------- prototype-only: screen-reader annotation ---------- */
+.annot { position: absolute; z-index: 70; right: var(--edge); bottom: 40px; width: min(380px, calc(100vw - var(--panel-w) - 48px)); background: var(--c-surface); color: var(--c-on-surface); border-radius: var(--rounded-md); padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25), inset 4px 0 0 var(--c-location); font-size: 13px; line-height: 18px; }
+.annot b { display: block; color: var(--c-secondary); font-size: 12px; margin-bottom: 4px; }
+.annot .a-ctx { display: block; color: var(--c-secondary); }
+.annot .a-name { display: block; font-weight: 600; font-size: 15px; line-height: 20px; margin: 2px 0; }
+@media (max-width: 767px) { .annot { top: 64px; bottom: auto; left: var(--edge); right: var(--edge); width: auto; } }

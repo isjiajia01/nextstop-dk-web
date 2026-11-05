@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="da" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Næste web: standardstop og tidslinje (forslag)</title>
+<!-- Slice proposal, pre-approval. Base files are loaded unmodified from ../assets (approved web prototype):
+     tokens.css, ios-app.css, web.css, icons.js, data.js, band.js. This slice adds slice.css + slice.js (fork of web.js, changes marked SLICE).
+     No new colour values. Deep links: see NOTES.md. -->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/ios-app.css">
+<link rel="stylesheet" href="../assets/web.css">
+<link rel="stylesheet" href="slice.css">
+</head>
+<body>
+<a class="skip" href="#sheetBody">Gå til afgange</a>
+<a class="skip" href="#depList">Gå til afgangslisten</a>
+<div id="app">
+  <section class="sheet" id="sheet" aria-label="Afgange">
+    <button class="grabber" id="grabber" aria-label="Arkhåndtag" data-act="toggle"></button>
+    <div class="sheet-body" id="sheetBody" tabindex="-1"></div>
+  </section>
+  <section class="detail" id="detail" hidden aria-labelledby="jTitleCard"></section>
+  <div class="map" id="map" aria-label="Kort over stoppesteder (illustrativt)">
+    <div class="map-plane" id="mapPlane"></div>
+    <div class="map-pins" id="mapPins"></div>
+  </div>
+  <div class="map-controls" id="mapControls">
+    <button id="locBtn" aria-label="Vis stoppesteder nær dig" title="Vis stoppesteder nær dig"></button>
+    <button id="pitchBtn" class="t3d" aria-label="Skift mellem 2D og 3D" aria-pressed="false" title="2D / 3D">3D</button>
+  </div>
+  <button id="demoBtn" class="demo-btn" aria-expanded="false" aria-controls="demoPanel">Demodata · tilstande</button>
+  <section class="demo-panel" id="demoPanel" hidden aria-label="Demotilstande"></section>
+  <p class="map-legal" id="mapLegal"><span class="proto-tag">Illustrativt kort</span> <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> data fra <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a></p>
+  <div class="toast" id="toast" hidden role="status"></div>
+  <p class="vh" id="srStatus" role="status" aria-live="polite"></p>
+  <aside class="annot" id="annot" hidden aria-hidden="true"><b>Prototypenote · skærmlæser siger</b><span id="annotTxt">Flyt fokus med Tab.</span></aside>
+</div>
+<script src="../assets/icons.js"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/band.js"></script>
+<script src="slice.js"></script>
+</body>
+</html>
