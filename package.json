@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run shapes",
     "build": "tsc --noEmit && vite build",
+    "prebuild": "npm run shapes",
+    "shapes": "tsx scripts/build-route-shapes.ts",
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "test": "vitest run",
