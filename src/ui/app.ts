@@ -3,12 +3,14 @@ import { buildViews, effectiveTime, type DepView } from '../domain/departure';
 import { formatDistance, foldLoose, lineCategory } from '../domain/line';
 import { formatTime, formatTimeSeconds } from '../domain/time';
 import { FixtureRepository, type DemoMode } from '../data/fixtureRepository';
+import { journeyRouteCoordinates, loadRouteShape, type RouteShapeCollection } from '../data/routeShape';
+import { bearingAtDistance, cumulativeLengths, journeyProgress, pointAtDistance } from '../domain/routeGeometry';
 import { HttpRepository } from '../data/httpRepository';
 import { FALLBACK_CENTER, RECENT_IDS, USER_LOCATION, FAR_LOCATION } from '../data/fixtures';
 import type { Board, Journey, LatLng, ServiceAlert, StopWithDistance, TransitRepository } from '../data/types';
 import { depLabel, renderBand, skeletonHtml } from './bandView';
 import { esc, icon } from './icons';
-import { createMap, type MapApi } from './map';
+import { createMap, type MapApi, type MapView } from './map';
 
 type Scene = 'main' | 'journey' | 'search' | 'denied' | 'nostops' | 'loading';
 type Detent = 'peek' | 'half' | 'full';
@@ -41,6 +43,7 @@ let origin: LatLng = USER_LOCATION;
 let journey: Journey | null = null;
 let journeyDep: DepView | null = null;
 let map: MapApi | null = null;
+let routeShape: RouteShapeCollection | null = null;
 let gen = 0;
 let prevDetent: Detent = 'peek';
 let lastFk = '';
@@ -531,13 +534,22 @@ function syncMap(refocus: boolean): void {
   const cur = currentStop();
   const stops = showPins ? (nearby.length ? nearby : cur ? [cur] : []) : [];
   const withCur = cur && !stops.some((s) => s.id === cur.id) ? [...stops, cur] : stops;
-  let route = null;
+  let route: MapView['route'] = null;
   if (S.scene === 'journey' && journey && journeyDep) {
     const color = getComputedStyle(document.documentElement).getPropertyValue(`--color-line-${journeyDep.cat}`).trim() || '#16191C';
     const now = nowMs();
     const pass = journey.stops.reduce((a, s, i) => ((s.predicted ?? s.scheduled) < now ? i : a), -1);
-    const bus = pass >= 0 && pass < journey.stops.length - 1 ? journey.stops[pass] ?? null : null;
-    route = { color, coords: journey.stops, stops: journey.stops, bus };
+    const { coords, realShape } = journeyRouteCoordinates(routeShape, journey);
+    let bus: LatLng | null = pass >= 0 && pass < journey.stops.length - 1 ? journey.stops[pass] ?? null : null;
+    let busBearing: number | null = null;
+    if (realShape && bus) {
+      const lengths = cumulativeLengths(coords);
+      const total = lengths[lengths.length - 1] ?? 0;
+      const distance = total * journeyProgress(journey.stops, now);
+      bus = pointAtDistance(coords, distance);
+      busBearing = bearingAtDistance(coords, distance);
+    }
+    route = { color, coords, stops: journey.stops, bus, busBearing, realShape };
   }
   map.update({
     stops: withCur, selectedId: S.scene === 'search' ? null : S.stopId, showPins, dimOthers: S.scene === 'journey',
@@ -723,6 +735,7 @@ export function start(): void {
   window.setInterval(tick, 1000);
   window.setInterval(() => { if (!document.hidden && (S.scene === 'main' || S.scene === 'journey')) void loadBoard(true); }, 30_000);
   void boot();
+  void loadRouteShape().then((shape) => { routeShape = shape; syncMap(false); });
   void createMap($('#map'), {
     dark: dark(), center: USER_LOCATION, reduceMotion, onPick: (id) => { lastFk = `pin:${id}`; void selectStop(id, 'peek'); },
   }).then((m) => { map = m; syncMap(true); });

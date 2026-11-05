@@ -7,7 +7,7 @@ const PAD_L = 14; // pole (6) + gap (8)
 const PAD_R = 4;
 const TICKS = [2, 5, 10, 15, 20];
 
-/** Screen-reader label, e.g. "Linje 5C mod Lufthavnen, om 2 minutter". */
+/** Screen-reader label, e.g. "Linje 5C mod Sundbyvester Plads, om 2 minutter". */
 export function depLabel(v: DepView, staleSince?: number): string {
   const base = `Linje ${v.line} mod ${v.dest}`;
   if (v.status === 'cancelled') return `${base}, aflyst`;
