@@ -5,6 +5,8 @@ export interface BackendConfig {
   baseUrl: string;
   cachePath: string;
   monthlyCallLimit: number;
+  warnRatio?: number;
+  reserveRatio?: number;
   minIntervalMs: number;
   timeoutMs: number;
   maxRetries: number;
@@ -26,6 +28,13 @@ const positiveDuration = (value: string | undefined, fallback: number): number =
   return parsed;
 };
 
+const ratio = (value: string | undefined, fallback: number): number => {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) throw new Error('Backend ratio must be between 0 and 1.');
+  return parsed;
+};
+
 /** Credentials are intentionally read only from the process environment. */
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BackendConfig {
   return {
@@ -33,6 +42,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BackendConf
     baseUrl: (env.REJSEPLANEN_BASE_URL?.trim() || 'https://www.rejseplanen.dk/api').replace(/\/$/, ''),
     cachePath: resolve(env.REJSEPLANEN_CACHE_PATH?.trim() || '.data/rejseplanen-cache.json'),
     monthlyCallLimit: positiveInteger(env.REJSEPLANEN_MONTHLY_CALL_LIMIT, 50_000),
+    warnRatio: ratio(env.REJSEPLANEN_WARN_RATIO, 0.8),
+    reserveRatio: ratio(env.REJSEPLANEN_RESERVE_RATIO, 0.1),
     minIntervalMs: positiveInteger(env.REJSEPLANEN_MIN_INTERVAL_MS, 250),
     timeoutMs: positiveDuration(env.REJSEPLANEN_TIMEOUT_MS, 5000),
     maxRetries: positiveInteger(env.REJSEPLANEN_MAX_RETRIES, 2),

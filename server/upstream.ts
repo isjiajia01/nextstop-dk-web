@@ -20,6 +20,10 @@ export class UpstreamUnavailableError extends Error {
   }
 }
 
+export type UsageLevel = 'ok' | 'warn' | 'critical' | 'exhausted';
+
+const loggedLevels = new Map<string, Set<UsageLevel>>();
+
 /** Serializes calls in this process and backs off transient upstream failures. */
 export class UpstreamGateway {
   private readonly inFlight = new Map<string, Promise<CacheRead<unknown>>>();
@@ -34,8 +38,23 @@ export class UpstreamGateway {
     private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
 
-  async budgetSnapshot(): Promise<{ month: string; calls: number }> {
-    return this.cache.snapshot();
+  async budgetSnapshot(): Promise<{ month: string; calls: number; remainingCalls: number; usageRatio: number; level: UsageLevel }> {
+    return this.describeBudget(await this.cache.snapshot());
+  }
+
+  private describeBudget(budget: { month: string; calls: number }): { month: string; calls: number; remainingCalls: number; usageRatio: number; level: UsageLevel } {
+    const limit = this.config.monthlyCallLimit;
+    const usageRatio = limit === 0 ? 1 : budget.calls / limit;
+    const level: UsageLevel = usageRatio >= 1 ? 'exhausted' : usageRatio >= 0.95 ? 'critical' : usageRatio >= (this.config.warnRatio ?? 0.8) ? 'warn' : 'ok';
+    const logged = loggedLevels.get(budget.month) ?? new Set<UsageLevel>();
+    loggedLevels.set(budget.month, logged);
+    for (const [threshold, crossed] of [[this.config.warnRatio ?? 0.8, 'warn'], [0.95, 'critical'], [1, 'exhausted']] as const) {
+      if (usageRatio >= threshold && !logged.has(crossed)) {
+        logged.add(crossed);
+        console.log(JSON.stringify({ event: 'rejseplanen_budget_level', month: budget.month, level: crossed, calls: budget.calls, monthlyCallLimit: limit, usageRatio }));
+      }
+    }
+    return { ...budget, remainingCalls: Math.max(0, limit - budget.calls), usageRatio, level };
   }
 
   /**
@@ -65,27 +84,30 @@ export class UpstreamGateway {
   }
 
   private async fetchAndCache<T>(key: string, endpoint: string, params: Record<string, string | number | undefined>): Promise<CacheRead<T>> {
-    const stale = await this.cache.getForFallback<T>(key, this.config.staleMaxAgeMs);
     try {
-      const payload = await this.fetchWithRetry<T>(endpoint, params);
-      const fetchedAt = this.now();
-      await this.cache.put(key, payload, fetchedAt);
-      return { value: payload, fetchedAt, age: 0 };
+      return await this.fetchWithRetry<T>(key, endpoint, params);
     } catch (error) {
+      const stale = await this.cache.getForFallback<T>(key, this.config.staleMaxAgeMs);
       if (stale) return stale;
       if (error instanceof MonthlyBudgetExceededError) throw error;
       throw toUnavailable(error);
     }
   }
 
-  private async fetchWithRetry<T>(endpoint: string, params: Record<string, string | number | undefined>): Promise<T> {
+  private async fetchWithRetry<T>(key: string, endpoint: string, params: Record<string, string | number | undefined>): Promise<CacheRead<T>> {
     const accessId = requireAccessId(this.config);
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt += 1) {
       try {
         await this.waitForRateLimit();
-        await this.cache.reserveCall(this.config.monthlyCallLimit);
-        return await this.fetchOnce<T>(endpoint, params, accessId);
+        const stale = await this.cache.getForFallback<T>(key, this.config.staleMaxAgeMs);
+        const budget = await this.cache.reserveCallUnlessStale(this.config.monthlyCallLimit, this.config.reserveRatio ?? 0.1, !!stale);
+        this.describeBudget(budget);
+        if (!budget.reserved && stale) return stale;
+        const payload = await this.fetchOnce<T>(endpoint, params, accessId);
+        const fetchedAt = this.now();
+        await this.cache.put(key, payload, fetchedAt);
+        return { value: payload, fetchedAt, age: 0 };
       } catch (error) {
         lastError = error;
         if (error instanceof MonthlyBudgetExceededError) throw error;

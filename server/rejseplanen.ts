@@ -51,7 +51,7 @@ export class RejseplanenClient {
     return parseBoard(result.value, stopId, now, result.fetchedAt);
   }
 
-  async budgetSnapshot(): Promise<{ month: string; calls: number }> {
+  async budgetSnapshot(): ReturnType<UpstreamGateway['budgetSnapshot']> {
     return this.gateway.budgetSnapshot();
   }
 }

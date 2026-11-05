@@ -59,13 +59,24 @@ export class PersistentCache {
 
   /** Reserve exactly one upstream call. This is the hard cross-restart budget boundary. */
   async reserveCall(limit: number): Promise<number> {
-    let calls = 0;
+    const result = await this.reserveCallUnlessStale(limit, 0, false);
+    return result.calls;
+  }
+
+  /** Check the reserve and spend a call under the same lock, including across processes. */
+  async reserveCallUnlessStale(limit: number, reserveRatio: number, hasStale: boolean): Promise<{ month: string; calls: number; reserved: boolean }> {
+    let result!: { month: string; calls: number; reserved: boolean };
     await this.mutate((file) => {
+      const inReserve = limit === 0 || file.calls / limit >= 1 - reserveRatio;
+      if (hasStale && inReserve) {
+        result = { month: file.month, calls: file.calls, reserved: false };
+        return;
+      }
       if (file.calls >= limit) throw new MonthlyBudgetExceededError(limit);
       file.calls += 1;
-      calls = file.calls;
+      result = { month: file.month, calls: file.calls, reserved: true };
     });
-    return calls;
+    return result;
   }
 
   async snapshot(): Promise<{ month: string; calls: number }> {

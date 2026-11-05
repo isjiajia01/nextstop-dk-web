@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PersistentCache } from './cache';
-import type { BackendConfig } from './config';
+import { configFromEnv, type BackendConfig } from './config';
 import { LiveTransitRepository, RejseplanenClient } from './rejseplanen';
 import { UpstreamGateway, type FetchLike } from './upstream';
 
@@ -36,7 +36,89 @@ async function tempCache(): Promise<string> {
   return join(directory, 'cache.json');
 }
 
+describe('backend configuration', () => {
+  it('uses quota defaults and validates configured ratios', () => {
+    expect(configFromEnv({})).toMatchObject({ monthlyCallLimit: 50_000, freshMs: 120_000, warnRatio: 0.8, reserveRatio: 0.1 });
+    expect(configFromEnv({ REJSEPLANEN_WARN_RATIO: '0.7', REJSEPLANEN_RESERVE_RATIO: '0.2' })).toMatchObject({ warnRatio: 0.7, reserveRatio: 0.2 });
+    for (const value of ['-0.1', '1.1', 'NaN', 'Infinity']) {
+      expect(() => configFromEnv({ REJSEPLANEN_WARN_RATIO: value })).toThrow();
+      expect(() => configFromEnv({ REJSEPLANEN_RESERVE_RATIO: value })).toThrow();
+    }
+  });
+});
+
 describe('persistent upstream gateway', () => {
+  it('logs each crossed level once per process and month without credentials or URLs', async () => {
+    const path = await tempCache();
+    let now = Date.UTC(2042, 0, 1);
+    const cache = new PersistentCache(path, () => now);
+    const gateway = new UpstreamGateway(config(path, { monthlyCallLimit: 20 }), cache, async () => response({ ok: true }), () => now);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      for (let i = 0; i < 20; i += 1) await gateway.requestJson('departureBoard', { id: String(i) });
+      await gateway.budgetSnapshot();
+      expect(log.mock.calls.map(([line]) => JSON.parse(String(line)).level)).toEqual(['warn', 'critical', 'exhausted']);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('test-access-id');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('https://');
+      now = Date.UTC(2042, 1, 1);
+      for (let i = 0; i < 16; i += 1) await gateway.requestJson('departureBoard', { id: `new-${i}` });
+      expect(log.mock.calls.map(([line]) => JSON.parse(String(line)).level)).toEqual(['warn', 'critical', 'exhausted', 'warn']);
+    } finally { log.mockRestore(); }
+  });
+
+  it('serves bounded stale boards and location lookups in reserve, but allows misses', async () => {
+    const path = await tempCache();
+    const cache = new PersistentCache(path);
+    const fetchedAt = Date.now() - 500;
+    const location = { LocationList: { StopLocation: [{ id: '1', name: 'Stop', lat: 55, lon: 12 }] } };
+    await cache.put('departureBoard?id=1', { DepartureBoard: { name: 'Stop', Departure: [] } }, fetchedAt);
+    await cache.put('location.name?input=Stop', location, fetchedAt);
+    await cache.put('location.nearbystops?originCoordLat=55&originCoordLong=12&r=1000', location, fetchedAt);
+    await cache.put('location.nearbystops?originCoordLat=55&originCoordLong=12&r=10000', location, fetchedAt);
+    for (let i = 0; i < 9; i += 1) await cache.reserveCall(10);
+    let calls = 0;
+    const client = new RejseplanenClient(config(path, { freshMs: 100, staleMaxAgeMs: 10_000 }), async () => { calls += 1; return response({ DepartureBoard: { Departure: [] } }); }, cache);
+    const repository = new LiveTransitRepository(client);
+    expect((await repository.board('1', Date.now())).fetchedAt).toBe(fetchedAt);
+    expect(await repository.searchStops('Stop', { lat: 55, lng: 12 })).toHaveLength(1);
+    expect(await repository.nearbyStops({ lat: 55, lng: 12 }, 1000)).toHaveLength(1);
+    expect(await repository.nearestStop({ lat: 55, lng: 12 })).not.toBeNull();
+    expect(calls).toBe(0);
+    await repository.board('miss', Date.now());
+    expect(calls).toBe(1);
+    await expect(repository.board('another-miss', Date.now())).rejects.toMatchObject({ code: 'MONTHLY_UPSTREAM_BUDGET_EXCEEDED' });
+    expect((await repository.board('1', Date.now())).fetchedAt).toBe(fetchedAt);
+  });
+
+  it('checks the reserve atomically for concurrent refreshes from separate gateways', async () => {
+    const path = await tempCache();
+    const cache = new PersistentCache(path);
+    const fetchedAt = Date.now() - 500;
+    await cache.put('departureBoard?id=one', { version: 0 }, fetchedAt);
+    await cache.put('departureBoard?id=two', { version: 0 }, fetchedAt);
+    for (let i = 0; i < 8; i += 1) await cache.reserveCall(10);
+    let calls = 0;
+    const fetcher: FetchLike = async () => response({ version: ++calls });
+    const settings = config(path, { freshMs: 100, staleMaxAgeMs: 10_000 });
+    const gateways = [new UpstreamGateway(settings, new PersistentCache(path), fetcher), new UpstreamGateway(settings, new PersistentCache(path), fetcher)];
+    const results = await Promise.all(gateways.map((gateway, index) => gateway.requestJson('departureBoard', { id: index ? 'two' : 'one' })));
+    expect(calls).toBe(1);
+    expect(results.filter((result) => result.fetchedAt === fetchedAt)).toHaveLength(1);
+    expect((await cache.snapshot()).calls).toBe(9);
+  });
+
+  it('refreshes stale entries below reserve and treats expired entries as misses in reserve', async () => {
+    const path = await tempCache();
+    let now = Date.UTC(2043, 0, 1);
+    const cache = new PersistentCache(path, () => now);
+    let calls = 0;
+    const gateway = new UpstreamGateway(config(path, { monthlyCallLimit: 2, reserveRatio: 0.5, freshMs: 100, staleMaxAgeMs: 1000 }), cache, async () => response({ version: ++calls }), () => now);
+    await cache.put('departureBoard?id=stale', { version: 0 }, now - 500);
+    expect((await gateway.requestJson<{ version: number }>('departureBoard', { id: 'stale' })).value.version).toBe(1);
+    now += 1001;
+    expect((await gateway.requestJson<{ version: number }>('departureBoard', { id: 'stale' })).value.version).toBe(2);
+    expect(calls).toBe(2);
+  });
   it('enforces the hard monthly budget across distinct calls', async () => {
     const path = await tempCache();
     let calls = 0;

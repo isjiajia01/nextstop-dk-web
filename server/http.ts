@@ -35,7 +35,7 @@ async function route(request: IncomingMessage, response: ServerResponse, depende
   if (url.pathname === '/health') {
     const configured = !!dependencies.config.accessId;
     const budget = await dependencies.client.budgetSnapshot();
-    writeJson(response, 200, { status: configured ? 'ok' : 'unconfigured', configured, month: budget.month, upstreamCalls: budget.calls, monthlyCallLimit: dependencies.config.monthlyCallLimit });
+    writeJson(response, 200, { status: configured ? 'ok' : 'unconfigured', configured, month: budget.month, upstreamCalls: budget.calls, monthlyCallLimit: dependencies.config.monthlyCallLimit, remainingCalls: budget.remainingCalls, usageRatio: budget.usageRatio, level: budget.level });
     return;
   }
   requireAccessId(dependencies.config);

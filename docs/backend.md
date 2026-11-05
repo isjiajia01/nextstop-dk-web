@@ -2,7 +2,7 @@
 
 The repository includes a small Node TypeScript backend in `server/`. It keeps the Rejseplanen access ID in the server process and exposes only normalized JSON to a browser or another local client:
 
-- `GET /health` reports whether credentials are configured and the durable monthly call count.
+- `GET /health` reports whether credentials are configured, the durable monthly call count, remaining calls, usage ratio, and quota level.
 - `GET /api/stops/search?q=...&lat=...&lng=...` calls `location.name` and returns normalized stops with distance.
 - `GET /api/stops/nearby?lat=...&lng=...&radiusM=...` and `GET /api/stops/nearest?lat=...&lng=...` call `location.nearbystops`.
 - `GET /api/board?stopId=...` calls `departureBoard` and returns the web app's `Board` shape.
@@ -19,13 +19,17 @@ All configuration is read from environment variables. There is no keychain, chec
 | `REJSEPLANEN_BASE_URL` | `https://www.rejseplanen.dk/api` | Upstream base URL; tests use a fake transport instead. |
 | `REJSEPLANEN_CACHE_PATH` | `.data/rejseplanen-cache.json` | Persistent cache and budget state. Keep this outside source control. |
 | `REJSEPLANEN_MONTHLY_CALL_LIMIT` | `50000` | Hard monthly limit. Every actual upstream attempt, including retries, consumes one call. |
+| `REJSEPLANEN_WARN_RATIO` | `0.8` | Usage ratio at which health reports `warn`; must be between 0 and 1. |
+| `REJSEPLANEN_RESERVE_RATIO` | `0.1` | Fraction of the budget reserved for requests without a usable stale entry; must be between 0 and 1. |
 | `REJSEPLANEN_MIN_INTERVAL_MS` | `250` | Minimum spacing between upstream attempts in one process. |
 | `REJSEPLANEN_TIMEOUT_MS` | `5000` | Per-attempt timeout. |
 | `REJSEPLANEN_MAX_RETRIES` | `2` | Retries for network errors, HTTP 429, and HTTP 5xx responses. |
 | `REJSEPLANEN_STALE_MAX_AGE_MS` | `21600000` | Maximum age for stale fallback (six hours). |
 | `REJSEPLANEN_FRESH_MS` | `120000` | Fresh-serve window (two minutes), capped at half of the stale lifetime. |
 
-The cache file is updated under an exclusive lock file and written through a synced temporary file followed by rename and directory sync. Processes sharing the same local filesystem path reserve budget slots atomically. The budget resets on the UTC calendar month. A process killed while holding the lock leaves a lock file and subsequent writes fail closed; after confirming no backend process holds the lock, an operator must remove it. Do not delete or roll back the budget file during a month. Fresh entries are served for up to two minutes (`REJSEPLANEN_FRESH_MS`) (or half the configured stale lifetime, whichever is shorter). A bounded stale response may be returned when refresh fails or the budget is exhausted. If no usable cache entry exists, budget exhaustion returns `429`. Board responses preserve the original fetch time in `fetchedAt`.
+The cache file is updated under an exclusive lock file and written through a synced temporary file followed by rename and directory sync. Processes sharing the same local filesystem path reserve budget slots atomically. The budget resets on the UTC calendar month. A process killed while holding the lock leaves a lock file and subsequent writes fail closed; after confirming no backend process holds the lock, an operator must remove it. Do not delete or roll back the budget file during a month. Fresh entries are served for up to two minutes (`REJSEPLANEN_FRESH_MS`) (or half the configured stale lifetime, whichever is shorter). Once usage reaches `1 - REJSEPLANEN_RESERVE_RATIO`, a bounded stale entry is served instead of refreshing, for boards and all location lookups; upstream calls remain available for cache misses. A bounded stale response may also be returned when refresh fails. If no usable cache entry exists, budget exhaustion returns `429`. Board responses preserve the original fetch time in `fetchedAt`.
+
+Health reports `ok` below the warning threshold, `warn` at the warning threshold, `critical` at 95%, and `exhausted` at 100% (higher levels take precedence). A zero call limit is exhausted with usage ratio 1. The server emits one structured JSON log line for each warning, critical, and exhausted threshold reached per process and UTC month; lines contain quota figures, never upstream URLs or credentials.
 
 ## API assumptions and limits
 
