@@ -5,7 +5,7 @@ import { esc, icon } from './icons';
 
 const PAD_L = 14; // pole (6) + gap (8)
 const PAD_R = 4;
-const TICKS = [2, 5, 10, 15, 20];
+export const TICKS = [5, 10, 15, 20];
 
 /** Screen-reader label, e.g. "Linje 5C mod Sundbyvester Plads, om 2 minutter". */
 export function depLabel(v: DepView, staleSince?: number): string {
@@ -36,7 +36,7 @@ function axisHtml(W: number, axisH: number): string {
   for (let m = 1; m <= SPAN_MIN; m++) {
     const major = TICKS.includes(m);
     h += `<span class="band-tick ${major ? 'major' : ''}" style="left:${X(m) - 0.75}px;bottom:${axisH - (major ? 7 : 5)}px"></span>`;
-    if (major && m !== 15) {
+    if (major) {
       const right = m === SPAN_MIN;
       const style = right ? `right:${PAD_R}px` : `left:${X(m)}px;transform:translateX(-50%)`;
       h += `<span class="band-tlabel" style="${style}">${right ? '20 min' : m}</span>`;
@@ -115,14 +115,14 @@ export function renderBand(el: HTMLElement, views: DepView[], later: number, o: 
     field += `<span class="band-empty">Ingen afgange de næste 20 min${nx ? `<br><b>Næste: ${esc(nx.line)} om ${nx.m} min</b>` : ''}</span>`;
   }
   field += axisHtml(W, axisH);
-  for (const p of layout.placed) {
+  for (const [index, p] of layout.placed.entries()) {
     const v = byKey.get(p.id) as DepView;
     field += `<button class="bchip ${cls(v)} ${p.flip ? 'flip' : ''}" data-key="${esc(v.key)}" data-fk="band:${esc(v.key)}"
-      style="left:${p.left}px;bottom:${bottomOf(p)}px" aria-label="${esc(depLabel(v, o.stale ? o.fetchedAt : undefined))}">${chipInner(v)}</button>`;
+      style="left:${p.left}px;bottom:${bottomOf(p)}px" tabindex="${index === 0 ? 0 : -1}" aria-label="${esc(depLabel(v, o.stale ? o.fetchedAt : undefined))}, ${index + 1} af ${layout.placed.length}">${chipInner(v)}</button>`;
   }
 
-  el.innerHTML = `<div class="band ${o.stale ? 'is-stale' : ''}" role="group" aria-label="Afgange de næste 20 minutter">
-    <div class="band-head">${status}${right}</div><div class="band-field" style="height:${fieldH}px">${field}</div></div>`;
+  el.innerHTML = `<div class="band ${o.stale ? 'is-stale' : ''}" role="group" aria-label="Tidslinje, ${layout.placed.length} afgange de næste 20 minutter" aria-describedby="bandHint">
+    <span id="bandHint" class="vh">Piletaster skifter afgang. Alle ${views.filter((v) => v.posSeconds <= 3600).length} afgange står også i listen Afgange.</span><div class="band-head">${status}${right}</div><div class="band-field" style="height:${fieldH}px">${field}</div></div>`;
 
   if (o.old && o.old.size && !o.reduceMotion) {
     el.querySelectorAll<HTMLElement>('.bchip').forEach((c) => {
@@ -135,7 +135,18 @@ export function renderBand(el: HTMLElement, views: DepView[], later: number, o: 
       c.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 650, easing: 'cubic-bezier(.2,.8,.2,1)' });
     });
   }
-  el.querySelectorAll<HTMLElement>('.bchip').forEach((c) => {
+  const chips = [...el.querySelectorAll<HTMLElement>('.bchip')];
+  chips.forEach((c) => {
+    c.addEventListener('keydown', (e) => {
+      const i = chips.indexOf(c);
+      let next = i;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = Math.min(i + 1, chips.length - 1);
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = Math.max(i - 1, 0);
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = chips.length - 1;
+      else return;
+      e.preventDefault(); c.tabIndex = -1; chips[next]!.tabIndex = 0; chips[next]!.focus();
+    });
     c.addEventListener('click', () => { const v = byKey.get(c.dataset.key ?? ''); if (v) o.onTap(v); });
   });
   el.querySelector('.band')?.classList.toggle('has-now', views.some((v) => v.m === 0 && v.status !== 'cancelled' && v.posSeconds <= SPAN_S));
