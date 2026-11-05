@@ -61,7 +61,7 @@ export class UpstreamGateway {
   }
 
   private freshAgeMs(): number {
-    return Math.min(30_000, Math.max(1, Math.floor(this.config.staleMaxAgeMs / 2)));
+    return Math.min(this.config.freshMs ?? 120_000, Math.max(1, Math.floor(this.config.staleMaxAgeMs / 2)));
   }
 
   private async fetchAndCache<T>(key: string, endpoint: string, params: Record<string, string | number | undefined>): Promise<CacheRead<T>> {

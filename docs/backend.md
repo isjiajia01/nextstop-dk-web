@@ -18,13 +18,14 @@ All configuration is read from environment variables. There is no keychain, chec
 | `REJSEPLANEN_ACCESS_ID` | none | Required upstream credential. The server returns a clear unconfigured error when absent. |
 | `REJSEPLANEN_BASE_URL` | `https://www.rejseplanen.dk/api` | Upstream base URL; tests use a fake transport instead. |
 | `REJSEPLANEN_CACHE_PATH` | `.data/rejseplanen-cache.json` | Persistent cache and budget state. Keep this outside source control. |
-| `REJSEPLANEN_MONTHLY_CALL_LIMIT` | `1000` | Hard monthly limit. Every actual upstream attempt, including retries, consumes one call. |
+| `REJSEPLANEN_MONTHLY_CALL_LIMIT` | `50000` | Hard monthly limit. Every actual upstream attempt, including retries, consumes one call. |
 | `REJSEPLANEN_MIN_INTERVAL_MS` | `250` | Minimum spacing between upstream attempts in one process. |
 | `REJSEPLANEN_TIMEOUT_MS` | `5000` | Per-attempt timeout. |
 | `REJSEPLANEN_MAX_RETRIES` | `2` | Retries for network errors, HTTP 429, and HTTP 5xx responses. |
 | `REJSEPLANEN_STALE_MAX_AGE_MS` | `21600000` | Maximum age for stale fallback (six hours). |
+| `REJSEPLANEN_FRESH_MS` | `120000` | Fresh-serve window (two minutes), capped at half of the stale lifetime. |
 
-The cache file is updated under an exclusive lock file and written through a synced temporary file followed by rename and directory sync. Processes sharing the same local filesystem path reserve budget slots atomically. The budget resets on the UTC calendar month. A process killed while holding the lock leaves a lock file and subsequent writes fail closed; after confirming no backend process holds the lock, an operator must remove it. Do not delete or roll back the budget file during a month. Fresh entries are served for up to 30 seconds (or half the configured stale lifetime, whichever is shorter). A bounded stale response may be returned when refresh fails or the budget is exhausted. If no usable cache entry exists, budget exhaustion returns `429`. Board responses preserve the original fetch time in `fetchedAt`.
+The cache file is updated under an exclusive lock file and written through a synced temporary file followed by rename and directory sync. Processes sharing the same local filesystem path reserve budget slots atomically. The budget resets on the UTC calendar month. A process killed while holding the lock leaves a lock file and subsequent writes fail closed; after confirming no backend process holds the lock, an operator must remove it. Do not delete or roll back the budget file during a month. Fresh entries are served for up to two minutes (`REJSEPLANEN_FRESH_MS`) (or half the configured stale lifetime, whichever is shorter). A bounded stale response may be returned when refresh fails or the budget is exhausted. If no usable cache entry exists, budget exhaustion returns `429`. Board responses preserve the original fetch time in `fetchedAt`.
 
 ## API assumptions and limits
 

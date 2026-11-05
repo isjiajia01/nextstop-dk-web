@@ -9,6 +9,8 @@ export interface BackendConfig {
   timeoutMs: number;
   maxRetries: number;
   staleMaxAgeMs: number;
+  /** Fresh-serve window; defaults to two minutes, capped at half of staleMaxAgeMs. */
+  freshMs?: number;
 }
 
 const positiveInteger = (value: string | undefined, fallback: number): number => {
@@ -30,11 +32,12 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BackendConf
     accessId: env.REJSEPLANEN_ACCESS_ID?.trim() || undefined,
     baseUrl: (env.REJSEPLANEN_BASE_URL?.trim() || 'https://www.rejseplanen.dk/api').replace(/\/$/, ''),
     cachePath: resolve(env.REJSEPLANEN_CACHE_PATH?.trim() || '.data/rejseplanen-cache.json'),
-    monthlyCallLimit: positiveInteger(env.REJSEPLANEN_MONTHLY_CALL_LIMIT, 1000),
+    monthlyCallLimit: positiveInteger(env.REJSEPLANEN_MONTHLY_CALL_LIMIT, 50_000),
     minIntervalMs: positiveInteger(env.REJSEPLANEN_MIN_INTERVAL_MS, 250),
     timeoutMs: positiveDuration(env.REJSEPLANEN_TIMEOUT_MS, 5000),
     maxRetries: positiveInteger(env.REJSEPLANEN_MAX_RETRIES, 2),
     staleMaxAgeMs: positiveDuration(env.REJSEPLANEN_STALE_MAX_AGE_MS, 6 * 60 * 60 * 1000),
+    freshMs: positiveDuration(env.REJSEPLANEN_FRESH_MS, 120_000),
   };
 }
 
