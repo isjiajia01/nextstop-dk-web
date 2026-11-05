@@ -19,7 +19,7 @@ export interface MapView {
   dimOthers: boolean;
   user: LatLng | null;
   radius?: LatLng | null;
-  route: { color: string; coords: LatLng[]; stops: LatLng[]; bus: LatLng | null } | null;
+  route: { color: string; coords: LatLng[]; stops: LatLng[]; bus: LatLng | null; busBearing?: number | null; realShape?: boolean } | null;
   lineColors: Record<string, string>;
 }
 
@@ -171,10 +171,13 @@ export async function createMap(
           userMarker = new ml.Marker({ element: el, anchor: 'center' }).setLngLat([v.user.lng, v.user.lat]).addTo(map);
         } else userMarker.setLngLat([v.user.lng, v.user.lat]);
       } else if (userMarker) { userMarker.remove(); userMarker = null; }
+      const credit = document.getElementById('routeAttribution');
+      if (credit) credit.hidden = !v.route?.realShape;
       busMarker?.remove(); busMarker = null;
       if (v.route?.bus) {
         const el = document.createElement('div');
-        el.innerHTML = `<span class="j-bus" role="img" aria-label="Bussens placering (demo)" style="--line:${esc(v.route.color)};display:grid">${icon('bus.fill')}</span>`;
+        const bearing = v.route.busBearing === undefined || v.route.busBearing === null ? '' : `;--bearing:${v.route.busBearing}deg`;
+        el.innerHTML = `<span class="j-bus" role="img" aria-label="Bussens placering (demo)" style="--line:${esc(v.route.color)};display:grid${bearing}">${icon('bus.fill')}</span>`;
         busMarker = new ml.Marker({ element: el, anchor: 'center' }).setLngLat([v.route.bus.lng, v.route.bus.lat]).addTo(map);
       }
       if (map.isStyleLoaded()) applyRoute();

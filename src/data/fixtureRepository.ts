@@ -1,6 +1,6 @@
 import { foldLoose } from '../domain/line';
 import type { Departure } from '../domain/departure';
-import { ALERTS, ROUTE_5C, STOPS, type StopSpec } from './fixtures';
+import { ALERTS, ROUTE_5C_TO_HUSUM, ROUTE_5C_TO_SUNDBY, STOPS, type StopSpec } from './fixtures';
 import {
   RepositoryError, type Board, type Journey, type LatLng, type ServiceAlert, type Stop, type StopWithDistance,
   type TransitRepository,
@@ -106,8 +106,9 @@ export class FixtureRepository implements TransitRepository {
     const board = await this.board(stopId, now);
     const dep = board.departures.find((d) => d.journeyId === journeyId);
     if (!dep) throw new RepositoryError('upstream', 'Turen findes ikke længere');
-    const mineIdx = Math.max(0, ROUTE_5C.findIndex((r) => r.name === 'Nørreport St.'));
-    const route = ROUTE_5C.map((r, i) => (i === ROUTE_5C.length - 1 && dep.destination !== 'Lufthavnen' ? { ...r, name: dep.destination } : r));
+    const base = dep.destination === 'Husum Torv' ? ROUTE_5C_TO_HUSUM : ROUTE_5C_TO_SUNDBY;
+    const mineIdx = Math.max(0, base.findIndex((r) => r.name === 'Nørreport St.'));
+    const route = base.map((r, i) => (i === base.length - 1 && dep.destination !== r.name ? { ...r, name: dep.destination } : r));
     const delay = dep.predicted !== undefined ? dep.predicted - dep.scheduled : 0;
     return {
       journeyId, line: dep.line, destination: dep.destination, cancelled: !!dep.cancelled,

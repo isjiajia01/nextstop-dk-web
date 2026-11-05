@@ -1,6 +1,6 @@
 # Næste (web demo)
 
-Live bus-arrivals demo for Denmark, web version of the iOS prototype in `nextstop-dk`. **The web UI still uses synthetic demo data** (labelled "Demodata"). A separate live backend exists in `server/`, but the demo frontend does not call it yet.
+Bus-arrivals demo for Denmark, web version of the iOS prototype in `nextstop-dk`. Arrivals use synthetic demo data by default; a configured backend can provide live data. The map uses generated Rejseplanen 5C geometry when available and falls back to the fixture.
 
 ## Commands
 - `npm install`
@@ -14,7 +14,7 @@ The UI only talks to `TransitRepository` (`src/data/types.ts`). `FixtureReposito
 
 ## Map choice
 MapLibre GL JS with OpenFreeMap vector tiles (positron/dark): no API key, open licence, WebGL with a fallback notice if tiles or WebGL fail.
-Attribution shown on the map: OpenFreeMap, © OpenMapTiles, data © OpenStreetMap contributors, MapLibre.
+Attribution shown on the map: OpenFreeMap, © OpenMapTiles, data © OpenStreetMap contributors, MapLibre; generated 5C geometry adds Rejseplanen CC BY 4.0 credit when used.
 
 ## Layout
 - <768px: bottom sheet (peek/half/full), as the iOS prototype.
