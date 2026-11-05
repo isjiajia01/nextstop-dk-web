@@ -1,10 +1,11 @@
+import { locationCopy, locationTransition, type LocationState } from '../domain/locationState';
 import { SPAN_S } from '../domain/band';
 import { buildViews, effectiveTime, type DepView } from '../domain/departure';
 import { formatDistance, foldLoose, lineCategory } from '../domain/line';
 import { formatTime, formatTimeSeconds } from '../domain/time';
 import { FixtureRepository, type DemoMode } from '../data/fixtureRepository';
 import { HttpRepository } from '../data/httpRepository';
-import { FALLBACK_CENTER, RECENT_IDS, USER_LOCATION, FAR_LOCATION } from '../data/fixtures';
+import { RECENT_IDS, FAR_LOCATION } from '../data/fixtures';
 import type { Board, Journey, LatLng, ServiceAlert, StopWithDistance, TransitRepository } from '../data/types';
 import { depLabel, renderBand, skeletonHtml } from './bandView';
 import { esc, icon } from './icons';
@@ -37,7 +38,10 @@ let boardFailed = false;
 let alerts: ServiceAlert[] = [];
 let nearby: StopWithDistance[] = [];
 let nearest: StopWithDistance | null = null;
-let origin: LatLng = USER_LOCATION;
+const DEFAULT_LOCATION: LatLng = { lat: 55.6832, lng: 12.5718 };
+let origin: LatLng = DEFAULT_LOCATION;
+let locationState: LocationState = 'prompt';
+let defaultStopId = 'nv';
 let journey: Journey | null = null;
 let journeyDep: DepView | null = null;
 let map: MapApi | null = null;
@@ -123,31 +127,47 @@ async function refreshJourney(): Promise<void> {
   try { journey = await api.journey(S.jId, S.stopId, nowMs()); } catch { /* keep the last journey */ }
 }
 
-/** Live mode only: the browser position, or 'denied'. Asked once per page load. */
-let located: LatLng | 'denied' | undefined;
-const live = !!apiBase;
-const home = (): LatLng => (located && located !== 'denied' ? located : USER_LOCATION);
-function locate(): Promise<LatLng | 'denied'> {
-  if (!navigator.geolocation) return Promise.resolve('denied');
-  return new Promise((resolve) => navigator.geolocation.getCurrentPosition(
-    (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-    () => resolve('denied'),
-    { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
-  ));
+let located: LatLng | undefined;
+const home = (): LatLng => located ?? DEFAULT_LOCATION;
+
+async function requestLocation(): Promise<void> {
+  locationState = locationTransition(locationState, 'request');
+  render();
+  const result = await new Promise<LatLng | 'denied' | 'unavailable'>((resolve) => {
+    if (!navigator.geolocation) { resolve('unavailable'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (e) => resolve(e.code === 1 ? 'denied' : 'unavailable'),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  });
+  if (locationState !== 'asking') return;
+  if (typeof result === 'string') {
+    locationState = locationTransition(locationState, result === 'denied' ? 'deny' : 'unavailable');
+    render(); return;
+  }
+  located = result; origin = result;
+  locationState = locationTransition(locationState, 'grant');
+  S.scenario = 'normal'; S.scene = 'loading'; render();
+  try {
+    nearby = await api.nearbyStops(origin, 1000);
+    if (!nearby.length) {
+      nearest = await api.nearestStop(origin); S.scene = 'nostops'; S.detent = 'half';
+      render(); syncMap(true); return;
+    }
+    S.stopId = nearby[0]!.id;
+    await loadBoard(true); S.scene = 'main'; render(); syncMap(true);
+    document.getElementById('stopTitle')?.focus({ preventScroll: true });
+    announce(`Viser stoppesteder nær dig. Nærmeste: ${currentStop()?.name ?? ''}`);
+    toast('Viser stoppesteder nær dig');
+  } catch { locationState = 'unavailable'; located = undefined; await boot(); }
 }
 
 async function boot(): Promise<void> {
   repo.reseed(nowMs());
   nearby = []; nearest = null; board = null; journey = null; boardFailed = false;
   if (S.scenario === 'loading') { S.scene = 'loading'; render(); syncMap(true); return; }
-  if (live && S.scenario === 'normal') {
-    if (!located) { S.scene = 'loading'; render(); located = await locate(); }
-    if (located === 'denied') S.scenario = 'denied';
-  }
-  if (S.scenario === 'denied') {
-    origin = FALLBACK_CENTER; S.scene = 'denied'; if (S.detent === 'peek') S.detent = 'half';
-    render(); syncMap(true); return;
-  }
+  if (S.scenario === 'denied') { locationState = 'denied'; S.scenario = 'normal'; }
   if (S.scenario === 'nostops') {
     origin = FAR_LOCATION; S.scene = 'nostops'; S.detent = 'half';
     nearest = await api.nearestStop(origin);
@@ -156,15 +176,21 @@ async function boot(): Promise<void> {
   origin = home();
   if (S.scene !== 'search') S.scene = 'loading';
   render();
-  nearby = await api.nearbyStops(origin, 1000);
-  if (live && nearby.length === 0) {
-    S.scene = 'nostops'; S.detent = 'half'; nearest = await api.nearestStop(origin);
-    render(); syncMap(true); return;
-  }
-  if (!nearby.some((s) => s.id === S.stopId)) S.stopId = nearby[0]?.id ?? 'nv';
-  repo.mode = S.net !== 'ok' ? (S.scenario === 'issues' ? 'issues' : 'normal') : repoMode(); // seed one good board first
-  await loadBoard(true);
-  if (S.net !== 'ok') { repo.mode = repoMode(); await loadBoard(true); }
+  try {
+    nearby = await api.nearbyStops(origin, 1000);
+    if (!located) {
+      const candidates = api.source === 'demo' ? nearby : await api.searchStops('Nørreport', DEFAULT_LOCATION);
+      const defaultStop = candidates.find((s) => s.name.includes('Nørreport') && s.road.includes('Nørre Voldgade'))
+        ?? candidates.find((s) => s.name.includes('Nørreport'));
+      if (defaultStop) {
+        S.stopId = defaultStop.id; defaultStopId = defaultStop.id;
+        if (!nearby.some((s) => s.id === defaultStop.id)) nearby.unshift(defaultStop);
+      }
+    } else if (!nearby.some((s) => s.id === S.stopId)) S.stopId = nearby[0]?.id ?? S.stopId;
+    repo.mode = S.net !== 'ok' ? (S.scenario === 'issues' ? 'issues' : 'normal') : repoMode();
+    await loadBoard(true);
+    if (S.net !== 'ok') { repo.mode = repoMode(); await loadBoard(true); }
+  } catch { boardFailed = true; }
   if (S.scene === 'loading') S.scene = 'main';
   render(); syncMap(true);
 }
@@ -214,8 +240,10 @@ function depRow(v: DepView): string {
   }
   const warn = v.disrupted ? `<span style="color:var(--c-warning-icon);--tri-mark:var(--c-surface)">${icon('exclamationmark.triangle.fill')}</span>` : '';
   const cur = isWide() && S.scene === 'journey' && S.jId === v.dep.journeyId;
+  const quality = v.status === 'rt' ? (stale() ? ', sidst kendte tid' : api.source === 'demo' ? ', demodata' : ', realtid') : '';
+  const rowLabel = `${depLabel(v, stale() ? board?.fetchedAt : undefined)}, ${v.status === 'cancelled' ? `planlagt kl. ${tp}` : `kl. ${t}`}${quality}${next.length ? `. ${v.status === 'cancelled' ? 'Næste afgang om' : 'Derefter om'} ${next.join(' og ')} min` : ''}`;
   return `<button class="row ${v.status === 'cancelled' ? 'is-cancelled' : ''} ${cur ? 'is-source' : ''}" ${cur ? 'aria-current="true"' : ''} data-dep="${esc(v.dep.journeyId)}" data-fk="row:${esc(v.key)}"
-    aria-label="${esc(depLabel(v, stale() ? board?.fetchedAt : undefined))}">${lchip(v.line)}
+    aria-label="${esc(rowLabel)}">${lchip(v.line)}
     <span class="r-main"><span class="r-title t-body-strong">${warn} ${esc(v.dest)}</span><span class="r-sub t-body-sm">${sub}</span></span>
     <span class="r-end">${end}</span></button>`;
 }
@@ -227,13 +255,23 @@ function header(): string {
     ? `<button class="cycle" data-act="cycle" aria-label="Næste stoppested i nærheden, ${idx + 1} af ${nearby.length}">${idx + 1}/${nearby.length}${icon('chevron.right')}</button>`
     : `<button class="cycle" data-act="nearby" aria-label="Tilbage til stoppesteder i nærheden">${icon('location.fill')}</button>`;
   return `<div class="s-head" data-drag>
-    <div class="titles"><h2 class="t-stop-title">${esc(st?.name ?? '')}</h2>
-    <div class="meta t-stop-meta"><span>${esc(st?.road ?? '')}</span>${st && st.distance ? `<span class="sep"></span><span>${dist(st.distance)}</span>` : ''}</div></div>
+    <div class="titles"><h2 class="t-stop-title" id="stopTitle" tabindex="-1">${esc(st?.name ?? '')}</h2>
+    <div class="meta t-stop-meta"><span>${esc(st?.road ?? '')}</span>${st && located && st.distance ? `<span class="sep"></span><span>${dist(st.distance)}</span>` : ''}</div></div>
     <div class="actions"><button class="ibtn" data-act="search" data-fk="search" aria-label="Søg efter stoppested">${icon('magnifyingglass')}</button>${cycle}<button class="ibtn only-desk" data-act="toggle" aria-expanded="${S.detent !== 'peek'}" aria-controls="sheetBody" aria-label="${S.detent === 'peek' ? 'Vis alle afgange' : 'Skjul afgangslisten'}"><span style="display:inline-block;${S.detent === 'peek' ? 'transform:rotate(180deg)' : ''}">${icon('chevron.down')}</span></button></div></div>`;
 }
 
 function banners(): string {
   let h = '';
+  const copy = locationCopy(locationState, !isDesktop());
+  if (copy) {
+    const asking = locationState === 'asking';
+    const primary = locationState === 'prompt' || asking;
+    h += `<section class="banner locate ${primary ? 'is-ask' : 'is-muted'}" aria-labelledby="locTitle">
+      <span class="b-ico">${icon(primary ? 'location.fill' : 'location.slash')}</span>
+      <span class="b-txt"><b class="b-title t-label-md" id="locTitle">${copy.title}</b><span class="b-sub t-body-sm">${copy.sub}</span>
+      <span class="b-row"><button class="b-action ${primary ? 'is-primary' : ''}" data-act="locate" ${asking ? 'disabled' : ''}>${asking ? '<span class="spin" aria-hidden="true"></span>' : icon(primary ? 'location.fill' : 'arrow.clockwise')}${copy.action}</button></span></span>
+      <button class="b-close" data-act="dismissloc" aria-label="Skjul beskeden om placering">${icon('xmark')}</button></section>`;
+  }
   if (stale()) {
     const off = S.net === 'offline';
     h += `<div class="banner offline" role="status"><span class="b-ico">${icon(off ? 'wifi.slash' : 'icloud.slash')}</span>
@@ -260,15 +298,15 @@ function sceneMain(): string {
     }
     return sceneLoading();
   }
-  const all = views().filter((v) => v.posSeconds <= 3600);
+  const all = views().filter((v) => v.posSeconds <= 3600).sort((a, b) => a.posSeconds - b.posSeconds);
   const ax = S.text >= 1.65;
   let h = header() + banners();
   h += ax ? `<div class="rows" aria-label="Næste afgange">${all.slice(0, 3).map(depRow).join('')}</div>` : '<div class="band-host" id="bandHost"></div>';
   h += '<div class="peek-end"></div>';
   h += '<div class="sec-h"><h3 class="t-label-md" style="margin:0">Afgange</h3><span class="t-body-sm">Næste 60 min</span></div>';
-  h += `<div class="rows">${all.slice(ax ? 3 : 0).map(depRow).join('') || '<p class="t-body c-2">Ingen afgange den næste time.</p>'}</div>`;
+  h += `<ol class="rows deps" id="depList" aria-label="Afgange">${all.map((v) => `<li>${depRow(v)}</li>`).join('')}</ol>${all.length ? '' : '<p class="t-body c-2">Ingen afgange den næste time.</p>'}`;
   if (nearby.length && nearby.some((s) => s.id === S.stopId)) {
-    h += `<div class="sec-h"><h3 class="t-label-md" style="margin:0">I nærheden</h3><span class="t-body-sm">${nearby.length} stop inden for 1000&nbsp;m</span></div><div class="rows">`;
+    h += `<div class="sec-h"><h3 class="t-label-md" style="margin:0">${located ? 'I nærheden' : 'Nær Nørreport St.'}</h3><span class="t-body-sm">${located ? `${nearby.length} stop inden for 1000&nbsp;m` : 'Uden din placering'}</span></div><div class="rows">`;
     for (const o of nearby) h += stopRow(o, `data-stop="${esc(o.id)}"`, esc(o.name), o.id === S.stopId);
     h += '</div>';
   }
@@ -281,7 +319,7 @@ function sceneMain(): string {
 function stopRow(o: StopWithDistance, attrs: string, name: string, current = false): string {
   return `<button class="row ${current ? 'is-current' : ''}" ${attrs} ${current ? 'aria-current="true"' : ''} data-fk="stop:${esc(o.id)}">
     <span class="stander-ico">${icon('bus.fill')}</span><span class="r-main"><span class="r-title t-body-strong">${name}</span>
-    <span class="r-sub t-body-sm">${esc(o.road)} · ${dist(o.distance)}</span><span class="chips">${o.lines.map((l) => lchip(l, 'sm')).join('')}</span></span>
+    <span class="r-sub t-body-sm">${esc(o.road)} · ${located ? dist(o.distance) : o.id === defaultStopId ? 'Standardstop' : `${dist(o.distance)} herfra`}</span><span class="chips">${o.lines.map((l) => lchip(l, 'sm')).join('')}</span></span>
     <span class="r-chev">${icon('chevron.right')}</span></button>`;
 }
 
@@ -290,13 +328,6 @@ function sceneLoading(): string {
     <div class="band-host" id="bandHost">${skeletonHtml()}</div><div class="peek-end"></div>
     <p class="t-body-sm c-2" role="status" style="text-align:center;margin-top:16px">Finder stoppesteder i nærheden …</p>
     <p class="footer-note t-body-sm"><span class="demo-tag">DEMO</span> Indlæsningstilstand i demoen.</p>`;
-}
-
-function sceneDenied(): string {
-  return `<div class="empty"><div class="e-ico">${icon('location.slash')}</div><h2 class="t-headline">Vi kan ikke se, hvor du er</h2>
-    <p class="t-body">Giv adgang til din placering for at se stoppesteder og afgange i nærheden. Du kan også søge efter et stoppested.</p>
-    <button class="btn primary t-body-strong" data-act="settings">${icon('gearshape')}Åbn indstillinger</button>
-    <button class="btn secondary t-body-strong" data-act="search" data-fk="search">${icon('magnifyingglass')}Søg efter stoppested</button><div class="peek-end"></div></div>`;
 }
 
 function sceneNoStops(): string {
@@ -408,7 +439,7 @@ function render(): void {
   const sceneChanged = body.dataset.scene !== shown || body.dataset.stop !== S.stopId;
   const scroll = sceneChanged ? 0 : body.scrollTop;
   const hadFocus = body.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.fk : undefined;
-  const scenes: Record<Scene, () => string> = { main: sceneMain, journey: sceneJourney, search: sceneSearch, denied: sceneDenied, nostops: sceneNoStops, loading: sceneLoading };
+  const scenes: Record<Scene, () => string> = { main: sceneMain, journey: sceneJourney, search: sceneSearch, denied: sceneMain, nostops: sceneNoStops, loading: sceneLoading };
   const old = new Map<string, DOMRect>();
   body.querySelectorAll<HTMLElement>('.bchip').forEach((c) => old.set(c.dataset.key ?? '', c.getBoundingClientRect()));
   body.innerHTML = scenes[shown]();
@@ -541,7 +572,7 @@ function syncMap(refocus: boolean): void {
   }
   map.update({
     stops: withCur, selectedId: S.scene === 'search' ? null : S.stopId, showPins, dimOthers: S.scene === 'journey',
-    user: S.scene === 'denied' ? null : origin, radius: S.scene === 'nostops' ? origin : null, route, lineColors: {},
+    user: located ?? null, radius: S.scene === 'nostops' ? origin : null, route, lineColors: {},
   });
   if (!refocus) return;
   if (route) {
@@ -596,7 +627,8 @@ async function onAct(a: string): Promise<void> {
   else if (a === 'earlier') { S.showEarlier = true; render(); }
   else if (a === 'disc') { S.discOpen = !S.discOpen; render(); }
   else if (a === 'retry') { toast('Prøver igen …'); await loadBoard(); toast(stale() ? 'Stadig ingen forbindelse (demo)' : 'Opdateret'); }
-  else if (a === 'settings') toast('Demo: her åbnes indstillinger for placering');
+  else if (a === 'locate') await requestLocation();
+  else if (a === 'dismissloc') { locationState = locationTransition(locationState, 'dismiss'); render(); document.getElementById('stopTitle')?.focus({ preventScroll: true }); toast('Brug placeringsknappen på kortet for at se stop nær dig'); }
   else if (a === 'nearest' && nearest) { origin = home(); nearby = []; S.scenario = 'normal'; await selectStop(nearest.id); }
 }
 
@@ -690,19 +722,8 @@ export function start(): void {
   readHash();
   applyAppearance();
   wire(); setupDrag();
-  $('#locBtn').addEventListener('click', () => {
-    if (live) {
-      void locate().then((p) => {
-        if (p === 'denied') { toast('Placering er slået fra'); return; }
-        const moved = !located || located === 'denied' || Math.abs(p.lat - located.lat) + Math.abs(p.lng - located.lng) > 0.001;
-        located = p;
-        if (moved) { S.scenario = 'normal'; void boot(); } else map?.focus(origin, mapPadding(), 15.5);
-      });
-      return;
-    }
-    if (S.scene === 'denied') { toast('Placering er slået fra (demo)'); return; }
-    map?.focus(origin, mapPadding(), 15.5); toast('Viser din placering (demo)');
-  });
+  $('#locBtn').setAttribute('aria-label', 'Vis stoppesteder nær dig');
+  $('#locBtn').addEventListener('click', () => { void requestLocation(); });
   $('#pitchBtn').addEventListener('click', (e) => {
     const on = map?.togglePitch() ?? false; const b = e.currentTarget as HTMLElement;
     b.textContent = on ? '3D' : '2D'; b.setAttribute('aria-pressed', String(on));
@@ -724,6 +745,6 @@ export function start(): void {
   window.setInterval(() => { if (!document.hidden && (S.scene === 'main' || S.scene === 'journey')) void loadBoard(true); }, 30_000);
   void boot();
   void createMap($('#map'), {
-    dark: dark(), center: USER_LOCATION, reduceMotion, onPick: (id) => { lastFk = `pin:${id}`; void selectStop(id, 'peek'); },
+    dark: dark(), center: DEFAULT_LOCATION, reduceMotion, onPick: (id) => { lastFk = `pin:${id}`; void selectStop(id, 'peek'); },
   }).then((m) => { map = m; syncMap(true); });
 }

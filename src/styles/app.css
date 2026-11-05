@@ -249,3 +249,22 @@ mark { background: none; color: inherit; font-weight: 700; }
 .rm .fade-in { animation: none; }
 @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Location notice and ordered departure alternative. */
+.banner.locate { background: var(--c-surface); gap: 10px; padding: 10px 2px 12px var(--spacing-md); align-items: flex-start; }
+.banner.locate .b-ico { font-size: 18px; margin-top: 1px; }
+.banner.locate.is-ask .b-ico { color: var(--c-location); }
+.banner.locate.is-muted .b-ico, .banner.locate .b-sub { color: var(--c-secondary); }
+.banner.locate .b-sub { opacity: 1; margin-top: 1px; }
+.banner.locate .b-row { display: flex; margin-top: var(--spacing-sm); }
+.banner.locate .b-action { align-self: auto; background: var(--c-surface-sunken); color: var(--c-primary); min-height: var(--spacing-hit); }
+.banner.locate .b-action.is-primary { background: var(--c-primary); color: var(--c-on-primary); }
+.banner.locate .b-close { flex: none; width: var(--spacing-hit); height: var(--spacing-hit); margin: -10px 0; display: grid; place-items: center; border-radius: var(--rounded-full); color: var(--c-secondary); }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: loc-spin .8s linear infinite; }
+@keyframes loc-spin { to { transform: rotate(360deg); } }
+.rm .spin { animation: none; border-right-color: currentColor; opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: .6; } }
+ol.rows { list-style: none; margin: 0; padding: 0; }
+ol.rows > li { position: relative; }
+ol.rows > li + li .row::before { content: ''; position: absolute; top: 0; right: 0; left: 72px; border-top: 1px solid var(--c-separator); }
+#stopTitle:focus { outline: none; }
