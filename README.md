@@ -30,8 +30,3 @@ Experimental (not approved design): palette "Fjord" (coral accent, blue-grey neu
 ## Verified / not verified
 Verified: unit tests, typecheck, production build, headless-browser screenshots (phone, iPad portrait, 1024, 1440 with journey card, dark mode).
 Not verified: real devices, screen readers, a full keyboard pass, measured contrast of the final build, Safari/Firefox.
-
-## 3D bus model
-The simulated 5C buses render the low-poly `bus.glb` from the [Low-poly Vehicles Kit](https://toolbenchdev.com/gamedev/cc0-game-assets/low-poly-vehicles-kit/) by Toolbench. The model has 744 triangles and is oriented with its nose along local +Z; each bus clone recolours only its own `Paint` material in the line colour. The GLB is copied unchanged to `public/models/bus.glb` (44 KB).
-
-The kit is released under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/) (public domain dedication); attribution is not required, but the source is recorded here. The downloaded archive's `LICENSE.txt` and `manifest.json` confirm the licence and the bus dimensions (11.16 × 2.8 × 3.1 m). If Three.js or the GLB cannot load, the bus layer falls back to the built-in box mesh.

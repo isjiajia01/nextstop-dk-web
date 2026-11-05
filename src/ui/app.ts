@@ -4,7 +4,7 @@ import { buildViews, effectiveTime, type DepView } from '../domain/departure';
 import { formatDistance, foldLoose, lineCategory } from '../domain/line';
 import { formatTime, formatTimeSeconds } from '../domain/time';
 import { FixtureRepository, type DemoMode } from '../data/fixtureRepository';
-import { journeyRouteCoordinates, loadRouteShape, type RouteShapeCollection, type RouteShapeFeature } from '../data/routeShape';
+import { journeyRouteCoordinates, loadRouteShape, type RouteShapeCollection } from '../data/routeShape';
 import { bearingAtDistance, cumulativeLengths, journeyProgress, pointAtDistance } from '../domain/routeGeometry';
 import { HttpRepository } from '../data/httpRepository';
 import { RECENT_IDS, FAR_LOCATION } from '../data/fixtures';
@@ -585,11 +585,6 @@ function syncMap(refocus: boolean): void {
   map.update({
     stops: withCur, selectedId: S.scene === 'search' ? null : S.stopId, showPins, dimOthers: S.scene === 'journey',
     user: located ?? null, radius: S.scene === 'nostops' ? origin : null, route, lineColors: {},
-    busRoutes: (S.scene === 'main' || S.scene === 'journey') && routeShape
-      ? routeShape.features.filter((f): f is Extract<RouteShapeFeature, { geometry: { type: 'LineString' } }> => f.geometry.type === 'LineString' && 'line' in f.properties && f.properties.line === '5C')
-        .map((f) => f.geometry.coordinates.map(([lng, lat]) => ({ lng: lng as number, lat: lat as number })))
-      : [],
-    busColor: getComputedStyle(document.documentElement).getPropertyValue('--color-line-c').trim() || '#00788a',
   });
   if (!refocus) return;
   if (route) {

@@ -3,8 +3,6 @@ import type { Map as MlMap, Marker as MlMarker, StyleSpecification } from 'mapli
 import { lineCategory } from '../domain/line';
 import type { LatLng, Stop } from '../data/types';
 import { esc, icon } from './icons';
-import { createBusLayer } from './busLayer';
-import { lightenColor } from '../domain/busScale';
 
 /**
  * MapLibre GL JS with OpenFreeMap vector tiles (no API key, no account). Attribution is rendered by
@@ -23,8 +21,6 @@ export interface MapView {
   radius?: LatLng | null;
   route: { color: string; coords: LatLng[]; stops: LatLng[]; bus: LatLng | null; busBearing?: number | null; realShape?: boolean } | null;
   lineColors: Record<string, string>;
-  busRoutes: LatLng[][];
-  busColor: string;
 }
 
 export interface MapApi {
@@ -74,34 +70,6 @@ export async function createMap(
   let last: MapView | null = null;
   let pitched = true;
   let dark = opts.dark;
-  let busLayerFailed = false;
-  const busLayer = createBusLayer(ml.MercatorCoordinate, opts.reduceMotion, () => {
-    busLayerFailed = true;
-    busLayer.suspend();
-    if (busMarker) busMarker.setOpacity('1');
-    const status = document.getElementById('busSimulationStatus');
-    if (status) status.hidden = true;
-  });
-  const applyBuses = () => {
-    if (!last || busLayerFailed) return;
-    const active = last.busRoutes.length > 0;
-    if (active && !map.getLayer(busLayer.layer.id)) {
-      try { map.addLayer(busLayer.layer); } catch (error) { console.error('Bus layer could not be added', error); busLayerFailed = true; }
-    } else if (!active && map.getLayer(busLayer.layer.id)) map.removeLayer(busLayer.layer.id);
-    const selected = last.route?.realShape && last.route.bus && last.route.busBearing != null
-      ? { position: last.route.bus, bearing: last.route.busBearing } : null;
-    busLayer.update({ routes: active ? last.busRoutes : [], color: dark ? lightenColor(last.busColor, 0.45) : last.busColor, selected });
-    if (busMarker) busMarker.setOpacity(active && !busLayerFailed && selected ? '0' : '1');
-    const status = document.getElementById('busSimulationStatus');
-    if (status) status.hidden = !active || busLayerFailed;
-  };
-  map.getCanvas().addEventListener('webglcontextlost', () => {
-    busLayerFailed = true;
-    busLayer.suspend();
-    if (busMarker) busMarker.setOpacity('1');
-    const status = document.getElementById('busSimulationStatus');
-    if (status) status.hidden = true;
-  });
 
   const addBuildings = () => {
     if (!map.getSource('openmaptiles') || map.getLayer('building-3d')) return;
@@ -123,12 +91,8 @@ export async function createMap(
   const applyRoute = () => {
     const v = last;
     if (!map.isStyleLoaded() && !map.getStyle()) return;
-    for (const id of ['route-stops', 'route-line', 'route-casing', 'bus-route', 'radius']) if (map.getLayer(id)) map.removeLayer(id);
-    for (const id of ['route', 'route-pts', 'bus-route', 'radius']) if (map.getSource(id)) map.removeSource(id);
-    if (v && !v.route && v.busRoutes.length) {
-      map.addSource('bus-route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: v.busRoutes.map((route) => route.map((c) => [c.lng, c.lat])) } } });
-      map.addLayer({ id: 'bus-route', type: 'line', source: 'bus-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': v.busColor, 'line-width': 4, 'line-opacity': 0.35 } });
-    }
+    for (const id of ['route-stops', 'route-line', 'route-casing', 'radius']) if (map.getLayer(id)) map.removeLayer(id);
+    for (const id of ['route', 'route-pts', 'radius']) if (map.getSource(id)) map.removeSource(id);
     if (v?.route) {
       map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: v.route.coords.map((c) => [c.lng, c.lat]) } } });
       map.addSource('route-pts', { type: 'geojson', data: { type: 'FeatureCollection', features: v.route.stops.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [c.lng, c.lat] } })) } });
@@ -145,10 +109,8 @@ export async function createMap(
       map.addSource('radius', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts } } });
       map.addLayer({ id: 'radius', type: 'line', source: 'radius', paint: { 'line-color': '#007AFF', 'line-width': 3, 'line-dasharray': [3, 2] } });
     }
-    if (map.getLayer(busLayer.layer.id)) map.moveLayer(busLayer.layer.id);
   };
-  map.on('style.load', () => { addBuildings(); applyRoute(); applyBuses(); });
-  map.on('load', () => { applyRoute(); applyBuses(); });
+  map.on('style.load', () => { addBuildings(); applyRoute(); });
 
   const hideCollidingLabels = () => requestAnimationFrame(() => {
     const sel = [...markers.values()].find((m) => m.el.classList.contains('is-selected'));
@@ -210,7 +172,7 @@ export async function createMap(
         } else userMarker.setLngLat([v.user.lng, v.user.lat]);
       } else if (userMarker) { userMarker.remove(); userMarker = null; }
       const credit = document.getElementById('routeAttribution');
-      if (credit) credit.hidden = !v.route?.realShape && !v.busRoutes.length;
+      if (credit) credit.hidden = !v.route?.realShape;
       busMarker?.remove(); busMarker = null;
       if (v.route?.bus) {
         const el = document.createElement('div');
@@ -218,8 +180,7 @@ export async function createMap(
         el.innerHTML = `<span class="j-bus" role="img" aria-label="Bussens placering (demo)" style="--line:${esc(v.route.color)};display:grid${bearing}">${icon('bus.fill')}</span>`;
         busMarker = new ml.Marker({ element: el, anchor: 'center' }).setLngLat([v.route.bus.lng, v.route.bus.lat]).addTo(map);
       }
-      if (map.isStyleLoaded()) { applyRoute(); applyBuses(); }
-      else if (map.getLayer(busLayer.layer.id)) applyBuses();
+      if (map.isStyleLoaded()) applyRoute();
       hideCollidingLabels();
     },
     focus(p, padding, zoom) {
