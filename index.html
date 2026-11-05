@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="da" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Næste · demo (Stander)</title>
+<link rel="icon" href="data:,">
+  <script type="module" crossorigin src="./assets/index-D9i7GU1b.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Cwnr71Dn.css">
+</head>
+<body>
+<a class="skip" href="#sheetBody">Gå til afgange</a>
+<a class="skip" href="#depList">Gå til afgangslisten</a>
+<div id="app">
+  <section class="sheet is-peek" id="sheet" aria-label="Afgange">
+    <button class="grabber" id="grabber" aria-label="Arkhåndtag"></button>
+    <div class="sheet-body" id="sheetBody" tabindex="-1"></div>
+  </section>
+  <section class="detail" id="detail" hidden aria-label="Tur"></section>
+  <div id="map" class="map" aria-label="Kort over stoppesteder"></div>
+  <p id="mapNotice" class="map-notice" role="status" hidden>Kortfliser kunne ikke hentes. Afgange virker stadig.</p>
+  <div class="map-controls" id="mapControls">
+    <button id="locBtn" class="is-on" aria-label="Vis min placering (demo)"><svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path fill="currentColor" d="M20.6 3.4 3.9 10.6c-.8.4-.7 1.6.2 1.8l6.6 1.2 1.2 6.6c.2.9 1.4 1 1.8.2L20.6 3.4Z"/></svg></button>
+    <button id="pitchBtn" class="t3d" aria-label="Skift mellem 2D og 3D" aria-pressed="true">3D</button>
+  </div>
+  <p class="map-legal" id="mapLegal"><a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> data fra <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a><span id="routeAttribution" hidden> · Rutedata © Rejseplanen (Rejseplan Labs), <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, forenklet geometri</span></p>
+  <div class="toast" id="toast" hidden role="status"></div>
+  <div class="vh" id="announcer" role="status" aria-live="polite"></div>
+</div>
+</body>
+</html>
